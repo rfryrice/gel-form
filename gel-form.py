@@ -1,12 +1,31 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from PIL import Image
+import numpy as np
+
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 st.title("Gel Entry Form")
 
+st.header("Gel Image")
+gel_image = st.file_uploader("Upload an image", type=["tif","png", "jpg",])
+
+if gel_image is not None:
+    # Open the uploaded file as an image
+    image = Image.open(gel_image,formats=["tiff","png", "jpg"])
+
+    if image.format == "TIFF":
+        #PIL image conversion sucks ass
+        #I to L conversion
+        img_arr = np.uint8(np.array(image) / 256)
+        st.image(img_arr, caption="Uploaded Image")
+    else:
+        st.image(image, caption="Uploaded Image")
+
 with st.form("gel"):
     st.header("PCR Date")
-    gel_date = st.date_input("Gel Date",value="today")
+    gel_date = st.date_input("Gel Date",value="today",label_visibility="collapsed")
 
 
     st.header("Samples")
@@ -38,33 +57,39 @@ with st.form("gel"):
                     "Label",
                     help="Enter the label on tube verbatim",
                     width="large",),
-                "is_band": "Band?",
+                "is_band":"Band",
             },
             disabled=["sample"],
             hide_index=True,
+            use_container_width=True
         )
 
 
-    st.header("Top Row")
-    gel_top = st.selectbox("Primer Set",("28SVX","HCO","m13","None"))
-
-    st.header("Bottom Row")
-    gel_bottom = st.selectbox("Primer Set",("28SVX","HCO","m13","None"),index=1)
-
-    st.header("Gel Image")
-    gel_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg","tif"])
-
-
-    if gel_image is not None:
-        # Open the uploaded file as an image
-        image = Image.open(gel_image)
-        
-        # Display the image
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+    st.header("Primer set")
+    gel_primer = st.selectbox("Primer Set",("28SVX","HCO","m13"),label_visibility="collapsed")
 
     complete = st.form_submit_button()
 
 if complete:
-    pass
+    st.write("Added the following data to the spreadsheet")
+    push_df = edited_df.copy()
+    push_df['primer'] = gel_primer
+    push_df['date'] = gel_date
 
-#TODO: Process entered data after submit
+    col_order = ['date','sample','lane','label','primer','is_band']
+    push_df = push_df[col_order]
+
+    with st.container():
+        st.dataframe(push_df,use_container_width=True)
+
+    
+    # Read in spreadsheet
+    sheet_df = conn.read()
+    # Combine form and spreadsheet
+    df_combined = pd.concat([sheet_df,push_df], ignore_index=True)
+
+    conn.update(data=df_combined)
+
+    st.cache_data.clear()
+    #st.rerun()
+    
